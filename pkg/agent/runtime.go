@@ -36,6 +36,19 @@ func NewRuntimeManager(host string, timeout time.Duration) (*RuntimeManager, err
 	}, nil
 }
 
+// GetAttacher returns an implementation of Attacher
+func (m *RuntimeManager) GetAttacher(image string, command []string, context context.Context, cancel context.CancelFunc) kubeletremote.Attacher {
+	return &DebugAttacher{
+		runtime:       m,
+		image:         image,
+		command:       command,
+		context:       context,
+		client:        m.client,
+		cancel:        cancel,
+		stopListenEOF: make(chan struct{}),
+	}
+}
+
 // DebugAttacher implements Attacher
 // we use this struct in order to inject debug info (image, command) in the debug procedure
 type DebugAttacher struct {
@@ -52,19 +65,6 @@ type DebugAttacher struct {
 
 func (a *DebugAttacher) AttachContainer(name string, uid kubetype.UID, container string, in io.Reader, out, err io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) error {
 	return a.DebugContainer(container, a.image, a.command, in, out, err, tty, resize)
-}
-
-// GetAttacher returns an implementation of Attacher
-func (m *RuntimeManager) GetAttacher(image string, command []string, context context.Context, cancel context.CancelFunc) kubeletremote.Attacher {
-	return &DebugAttacher{
-		runtime:       m,
-		image:         image,
-		command:       command,
-		context:       context,
-		client:        m.client,
-		cancel:        cancel,
-		stopListenEOF: make(chan struct{}),
-	}
 }
 
 // DebugContainer executes the main debug flow
@@ -225,6 +225,9 @@ func (m *DebugAttacher) RmContainer(id string, force bool) error {
 
 // AttachToContainer do `docker attach`
 func (m *DebugAttacher) AttachToContainer(container string, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool, resize <-chan remotecommand.TerminalSize) error {
+
+
+
 	HandleResizing(resize, func(size remotecommand.TerminalSize) {
 		m.resizeContainerTTY(container, uint(size.Height), uint(size.Width))
 	})
@@ -268,6 +271,7 @@ func (m *DebugAttacher) holdHijackedConnection(tty bool, inputStream io.Reader, 
 			io.Copy(resp.Conn, inputStream)
 		}
 		resp.CloseWrite()
+		// TODO 一定要close ？
 		close(stdinDone)
 	}()
 

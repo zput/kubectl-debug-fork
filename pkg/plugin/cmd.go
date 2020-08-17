@@ -69,13 +69,37 @@ type DebugOptions struct {
 	genericclioptions.IOStreams
 }
 
-func NewDebugOptions(streams genericclioptions.IOStreams) *DebugOptions {
-	return &DebugOptions{Flags: genericclioptions.NewConfigFlags(), IOStreams: streams}
+/*func NewDebugOptions(streams genericclioptions.IOStreams) *DebugOptions {
+	return &DebugOptions{Flags: genericclioptions.NewConfigFlags(false), IOStreams: streams}
+}*/
+
+type DebugOptionsFunc func ( *DebugOptions)
+
+func NewDebugOptions(option ...DebugOptionsFunc) *DebugOptions {
+	var object = new(DebugOptions)
+	for index := range option{
+		option[index](object)
+	}
+
+	return object
+}
+
+func DebugOptionsFlags(flag *genericclioptions.ConfigFlags)DebugOptionsFunc{
+	return func(o *DebugOptions){
+		o.Flags = flag
+	}
+}
+
+func DebugOptionsIOStreams(streams genericclioptions.IOStreams)DebugOptionsFunc{
+	return func(o *DebugOptions){
+		o.IOStreams = streams
+	}
 }
 
 // NewDebugCmd returns a cobra command wrapping DebugOptions
 func NewDebugCmd(streams genericclioptions.IOStreams) *cobra.Command {
-	opts := NewDebugOptions(streams)
+
+	opts := NewDebugOptions(DebugOptionsFlags(genericclioptions.NewConfigFlags(false)), DebugOptionsIOStreams(streams))
 
 	cmd := &cobra.Command{
 		Use: "debug POD [-c CONTAINER] -- COMMAND [args...]",
@@ -84,6 +108,7 @@ func NewDebugCmd(streams genericclioptions.IOStreams) *cobra.Command {
 		Long:    longDesc,
 		Example: example,
 		Run: func(c *cobra.Command, args []string) {
+			fmt.Println("hello i'm here, in cmd/ newDebugCmd")
 			argsLenAtDash := c.ArgsLenAtDash()
 			if err := opts.Complete(c, args, argsLenAtDash); err != nil {
 				fmt.Println(err)
@@ -113,6 +138,8 @@ func NewDebugCmd(streams genericclioptions.IOStreams) *cobra.Command {
 
 // Complete populate default values from KUBECONFIG file
 func (o *DebugOptions) Complete(cmd *cobra.Command, args []string, argsLenAtDash int) error {
+	fmt.Println("hello i'm here, in cmd/ newDebugCmd / Complete")
+
 	o.Args = args
 	if len(args) == 0 {
 		return fmt.Errorf("error pod not specified")
@@ -125,7 +152,10 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string, argsLenAtDash
 		return err
 	}
 
+	fmt.Println("------print flags-----", o.Flags.ToRawKubeConfigLoader(), o.Namespace)
+
 	o.PodName = args[0]
+	fmt.Println("------print flags-----", o.Flags.ToRawKubeConfigLoader(), o.Namespace, o.PodName, "---", args)
 
 	// read defaults from config file
 	configFile := o.ConfigLocation
@@ -171,6 +201,7 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string, argsLenAtDash
 	}
 	clientset, err := kubernetes.NewForConfig(o.Config)
 	if err != nil {
+		fmt.Println("err; ---", err, "---NewForConfig")
 		return err
 	}
 	o.PodClient = clientset.CoreV1()
@@ -190,14 +221,22 @@ func (o *DebugOptions) Validate() error {
 
 func (o *DebugOptions) Run() error {
 
+	fmt.Println("run; function")
+
 	pod, err := o.PodClient.Pods(o.Namespace).Get(o.PodName, v1.GetOptions{})
 	if err != nil {
+		fmt.Println("run; function; <o.PodClient.Pods>")
 		return err
 	}
 	if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 		return fmt.Errorf("cannot debug in a completed pod; current phase is %s", pod.Status.Phase)
 	}
+
+	fmt.Printf("pod:[%+v]", pod)
+
 	hostIP := pod.Status.HostIP
+
+	fmt.Printf("hostIP:[%+v]\n\n", hostIP)
 
 	containerName := o.ContainerName
 	if len(containerName) == 0 {
@@ -212,6 +251,8 @@ func (o *DebugOptions) Run() error {
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("containerId:[%+v]\n\n", containerId)
 
 	t := o.setupTTY()
 	var sizeQueue remotecommand.TerminalSizeQueue
